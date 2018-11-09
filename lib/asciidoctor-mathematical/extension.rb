@@ -118,7 +118,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     text, source_modified = handle_inline_stem sect, text, mathematical, image_output_dir, image_target_dir, format, inline
     if source_modified
       sect.instance_variable_set :@title, text
-      sect.remove_instance_variable :@subbed_title
+      sect.instance_variable_set :@title_converted, false
     end
   end
 
