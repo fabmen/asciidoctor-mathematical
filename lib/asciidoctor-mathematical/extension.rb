@@ -6,9 +6,8 @@ autoload :Mathematical, 'mathematical'
 
 class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
   LineFeed = %(\n)
-  StemInlineMacroRx = /\\?(?:stem|latexmath):([a-z,]*)\[(.*?[^\\])\]/m
-  LatexmathInlineMacroRx = /\\?latexmath:([a-z,]*)\[(.*?[^\\])\]/m
-
+  StemInlineMacroRx = /\\?(?:stem|latexmath|asciimath):([a-z,]*)\[(.*?[^\\])\]/m
+  
   def process document
     format = ((document.attr 'mathematical-format') || 'png').to_sym
     if format != :png and format != :svg
@@ -69,8 +68,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
 
   def handle_stem_block(stem, mathematical, image_output_dir, image_target_dir, format, inline)
     equation_type = stem.style.to_sym
-    return unless equation_type == :latexmath
-
+    
     img_target, img_width, img_height = make_equ_image stem.content, stem.id, false, mathematical, image_output_dir, image_target_dir, format, inline
 
     parent = stem.parent
@@ -127,12 +125,10 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
   def handle_inline_stem(node, text, mathematical, image_output_dir, image_target_dir, format, inline)
     document = node.document
     to_html = document.basebackend? 'html'
-    support_stem_prefix = document.attr? 'stem', 'latexmath'
-    stem_rx = support_stem_prefix ? StemInlineMacroRx : LatexmathInlineMacroRx
-
+    
     source_modified = false
     # TODO skip passthroughs in the source (e.g., +stem:[x^2]+)
-    text = text.gsub(stem_rx) {
+    text.gsub!(StemInlineMacroRx) {
       if (m = $~)[0].start_with? '\\'
         next m[0][1..-1]
       end
@@ -152,7 +148,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
       else
         %(image:#{img_target}[width=#{img_width},height=#{img_height}])
       end
-    } if (text != nil) && (text.include? ':') && ((support_stem_prefix && (text.include? 'stem:')) || (text.include? 'latexmath:'))
+    } if (text != nil) && (text.include? ':') && ((text.include? 'stem:') || (text.include? 'latexmath:') || (text.include? 'asciimath:'))
 
     [text, source_modified]
   end
