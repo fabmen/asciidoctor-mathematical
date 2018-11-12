@@ -22,14 +22,10 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     end
     # The no-args constructor defaults to SVG and standard delimiters ($..$ for inline, $$..$$ for block)
     mathematical = ::Mathematical.new format: format, ppi: ppi
-    unless inline
-      image_output_dir, image_target_dir = image_output_and_target_dir document
-      ::Asciidoctor::Helpers.mkdir_p image_output_dir unless ::File.directory? image_output_dir
-    end
-
+    
     unless (stem_blocks = document.find_by context: :stem).nil_or_empty?
       stem_blocks.each do |stem|
-        handle_stem_block stem, mathematical, image_output_dir, image_target_dir, format, inline
+        handle_stem_block stem, mathematical, format, inline
       end
     end
 
@@ -37,7 +33,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
       (b.content_model == :simple && (b.subs.include? :macros)) || b.context == :list_item
     }).nil_or_empty?
       prose_blocks.each do |prose|
-        handle_prose_block prose, mathematical, image_output_dir, image_target_dir, format, inline
+        handle_prose_block prose, mathematical, format, inline
       end
     end
 
@@ -50,7 +46,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
             if cell.style == :asciidoc
               process cell.inner_document
             elsif cell.style != :literal
-              handle_nonasciidoc_table_cell cell, mathematical, image_output_dir, image_target_dir, format, inline
+              handle_nonasciidoc_table_cell cell, mathematical, format, inline
             end
           end
         end
@@ -59,17 +55,17 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
 
     unless (sect_blocks = document.find_by content: :section).nil_or_empty?
       sect_blocks.each do |sect|
-        handle_section_title sect, mathematical, image_output_dir, image_target_dir, format, inline
+        handle_section_title sect, mathematical, format, inline
       end
     end
 
     nil
   end
 
-  def handle_stem_block(stem, mathematical, image_output_dir, image_target_dir, format, inline)
+  def handle_stem_block(stem, mathematical, format, inline)
     equation_type = stem.style.to_sym
     
-    img_target, img_width, img_height = make_equ_image stem.content, stem.id, false, mathematical, image_output_dir, image_target_dir, format, inline
+    img_target, img_width, img_height = make_equ_image stem, stem.content, stem.id, false, mathematical, format, inline
 
     parent = stem.parent
     if inline
@@ -93,9 +89,9 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     end
   end
 
-  def handle_prose_block(prose, mathematical, image_output_dir, image_target_dir, format, inline)
+  def handle_prose_block(prose, mathematical, format, inline)
     text = prose.context == :list_item ? (prose.instance_variable_get :@text) : (prose.lines * LineFeed)
-    text, source_modified = handle_inline_stem prose, text, mathematical, image_output_dir, image_target_dir, format, inline
+    text, source_modified = handle_inline_stem prose, text, mathematical, format, inline
     if source_modified
       if prose.context == :list_item
         prose.instance_variable_set :@text, text
@@ -105,24 +101,24 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     end
   end
 
-  def handle_nonasciidoc_table_cell(cell, mathematical, image_output_dir, image_target_dir, format, inline)
+  def handle_nonasciidoc_table_cell(cell, mathematical, format, inline)
     text = cell.instance_variable_get :@text
-    text, source_modified = handle_inline_stem cell, text, mathematical, image_output_dir, image_target_dir, format, inline
+    text, source_modified = handle_inline_stem cell, text, mathematical,  format, inline
     if source_modified
       cell.instance_variable_set :@text, text
     end
   end
 
-  def handle_section_title(sect, mathematical, image_output_dir, image_target_dir, format, inline)
+  def handle_section_title(sect, mathematical, format, inline)
     text = sect.instance_variable_get :@title
-    text, source_modified = handle_inline_stem sect, text, mathematical, image_output_dir, image_target_dir, format, inline
+    text, source_modified = handle_inline_stem sect, text, mathematical, format, inline
     if source_modified
       sect.instance_variable_set :@title, text
       sect.instance_variable_set :@title_converted, false
     end
   end
 
-  def handle_inline_stem(node, text, mathematical, image_output_dir, image_target_dir, format, inline)
+  def handle_inline_stem(node, text, mathematical, format, inline)
     document = node.document
     to_html = document.basebackend? 'html'
     
@@ -142,7 +138,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
       eq_data.gsub! '\]', ']'
       subs = m[1].nil_or_empty? ? (to_html ? [:specialcharacters] : []) : (node.resolve_pass_subs m[1])
       eq_data = node.apply_subs eq_data, subs unless subs.empty?
-      img_target, img_width, img_height = make_equ_image eq_data, nil, true, mathematical, image_output_dir, image_target_dir, format, inline
+      img_target, img_width, img_height = make_equ_image node, eq_data, nil, true, mathematical, format, inline
       if inline
         %(pass:[<span class="steminline"> #{img_target} </span>])
       else
@@ -153,14 +149,17 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     [text, source_modified]
   end
 
-  def make_equ_image(equ_data, equ_id, equ_inline, mathematical, image_output_dir, image_target_dir, format, inline)
+  def make_equ_image(node, equ_data, equ_id, equ_inline, mathematical, format, inline)
     input = equ_inline ? %($#{equ_data}$) : %($$#{equ_data}$$)
-
+    
+    parent = node.parent
     # TODO: Handle exceptions.
     result = mathematical.parse input
     if inline
       result[:data]
     else
+      image_output_dir = image_output parent
+      ::Asciidoctor::Helpers.mkdir_p image_output_dir unless ::File.directory? image_output_dir
       unless equ_id
         equ_id = %(stem-#{::Digest::MD5.hexdigest input})
       end
@@ -170,37 +169,23 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
 
       ::IO.write img_file, result[:data]
 
-      img_target = ::File.join image_target_dir, img_target unless image_target_dir == '.'
-      [img_target, result[:width], result[:height]]
+      [img_file, result[:width], result[:height]]
     end
   end
 
-  def image_output_and_target_dir(parent)
+  def image_output(parent)
     document = parent.document
 
     output_dir = parent.attr('imagesoutdir')
     if output_dir
       base_dir = nil
-      if parent.attr('imagesdir').nil_or_empty?
-        target_dir = output_dir
-      else
-        # When imagesdir attribute is set, every relative path is prefixed with it. So the real target dir shall then be relative to the imagesdir, instead of being relative to document root.
-        doc_outdir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
-        abs_imagesdir = parent.normalize_system_path(parent.attr('imagesdir'), doc_outdir)
-        abs_outdir = parent.normalize_system_path(output_dir, base_dir)
-        p1 = ::Pathname.new abs_outdir
-        p2 = ::Pathname.new abs_imagesdir
-        target_dir = p1.relative_path_from(p2).to_s
-      end
     else
       base_dir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
       output_dir = parent.attr('imagesdir')
-      # since we store images directly to imagesdir, target dir shall be NULL and asciidoctor converters will prefix imagesdir.
-      target_dir = "."
     end
 
     output_dir = parent.normalize_system_path(output_dir, base_dir)
-    return [output_dir, target_dir]
+    return output_dir
   end
 
 end
