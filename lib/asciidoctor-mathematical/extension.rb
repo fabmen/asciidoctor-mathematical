@@ -173,40 +173,32 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
       [img_target, result[:width], result[:height]]
     end
   end
-
+  
   def image_output_and_target_dir(parent)
     document = parent.document
 
     output_dir = parent.attr('imagesoutdir')
     if output_dir
       base_dir = nil
-
-    else
-      base_dir = parent.attr('outdir', nil, true) || doc_option(document, :to_dir)
-      images_dir = parent.attr('imagesdir', nil, true)
-      # since we store images directly to imagesdir, target dir shall be NULL and asciidoctor converters will prefix imagesdir.
-    end
+      if parent.attr('imagesdir').nil_or_empty?
+        target_dir = output_dir
+      else
+        # When imagesdir attribute is set, every relative path is prefixed with it. So the real target dir shall then be relative to the imagesdir, instead of being relative to document root.
         doc_outdir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
         abs_imagesdir = parent.normalize_system_path(parent.attr('imagesdir'), doc_outdir)
         abs_outdir = parent.normalize_system_path(output_dir, base_dir)
         p1 = ::Pathname.new abs_outdir
         p2 = ::Pathname.new abs_imagesdir
         target_dir = p1.relative_path_from(p2).to_s
-    output_dir = parent.normalize_system_path(output_dir, base_dir)
+      end
+    else
+      base_dir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
+      output_dir = parent.attr('imagesdir')
+      # since we store images directly to imagesdir, target dir shall be NULL and asciidoctor converters will prefix imagesdir.
+      target_dir = "."
+    end
 
+    output_dir = parent.normalize_system_path(output_dir, base_dir)
     return [output_dir, target_dir]
   end
-  def doc_option(document, key)
-          if document.respond_to?(:options)
-            value = document.options[key]
-          else
-            value = nil
-          end
-
-          if document.nested? && value.nil?
-            doc_option(document.parent_document, key)
-          else
-            value
-          end
-        end
 end
