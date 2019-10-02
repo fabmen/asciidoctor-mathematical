@@ -7,7 +7,7 @@ autoload :Mathematical, 'mathematical'
 class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
   LineFeed = %(\n)
   StemInlineMacroRx = /\\?(?:stem|latexmath|asciimath):([a-z,]*)\[(.*?[^\\])\]/m
-  
+
   def process document
     format = ((document.attr 'mathematical-format') || 'png').to_sym
     if format != :png and format != :svg
@@ -34,7 +34,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     end
 
     unless (prose_blocks = document.find_by {|b|
-      (b.content_model == :simple && (b.subs.include? :macros)) || b.context == :list_item
+      (b.content_model == :simple && (b.subs.include? :macros)) && b.context != :table_cell || b.context == :list_item
     }).nil_or_empty?
       prose_blocks.each do |prose|
         handle_prose_block prose, mathematical, image_output_dir, image_target_dir, format, inline
@@ -68,7 +68,7 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
 
   def handle_stem_block(stem, mathematical, image_output_dir, image_target_dir, format, inline)
     equation_type = stem.style.to_sym
-    
+
     img_target, img_width, img_height = make_equ_image stem.content, stem.id, false, mathematical, image_output_dir, image_target_dir, format, inline
 
     parent = stem.parent
@@ -117,15 +117,14 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     text = sect.instance_variable_get :@title
     text, source_modified = handle_inline_stem sect, text, mathematical, image_output_dir, image_target_dir, format, inline
     if source_modified
-      sect.instance_variable_set :@title, text
-      sect.instance_variable_set :@title_converted, false
+      sect.title = text
     end
   end
 
   def handle_inline_stem(node, text, mathematical, image_output_dir, image_target_dir, format, inline)
     document = node.document
     to_html = document.basebackend? 'html'
-    
+
     source_modified = false
     # TODO skip passthroughs in the source (e.g., +stem:[x^2]+)
     text.gsub!(StemInlineMacroRx) {
@@ -181,25 +180,20 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
     output_dir = parent.attr('imagesoutdir')
     if output_dir
       base_dir = nil
-      if parent.attr('imagesdir').nil_or_empty?
-        target_dir = output_dir
-      else
-        # When imagesdir attribute is set, every relative path is prefixed with it. So the real target dir shall then be relative to the imagesdir, instead of being relative to document root.
+
+    else
+      base_dir = parent.attr('outdir', nil, true) || doc_option(document, :to_dir)
+      images_dir = parent.attr('imagesdir', nil, true)
+      # since we store images directly to imagesdir, target dir shall be NULL and asciidoctor converters will prefix imagesdir.
+    end
         doc_outdir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
         abs_imagesdir = parent.normalize_system_path(parent.attr('imagesdir'), doc_outdir)
         abs_outdir = parent.normalize_system_path(output_dir, base_dir)
         p1 = ::Pathname.new abs_outdir
         p2 = ::Pathname.new abs_imagesdir
         target_dir = p1.relative_path_from(p2).to_s
-      end
-    else
-      base_dir = parent.attr('outdir') || (document.respond_to?(:options) && document.options[:to_dir])
-      output_dir = parent.attr('imagesdir')
-      # since we store images directly to imagesdir, target dir shall be NULL and asciidoctor converters will prefix imagesdir.
-      target_dir = "."
-    end
-
     output_dir = parent.normalize_system_path(output_dir, base_dir)
+
     return [output_dir, target_dir]
   end
 
