@@ -196,5 +196,17 @@ class MathematicalTreeprocessor < Asciidoctor::Extensions::Treeprocessor
 
     return [output_dir, target_dir]
   end
+  def doc_option(document, key)
+          if document.respond_to?(:options)
+            value = document.options[key]
+          else
+            value = nil
+          end
 
+          if document.nested? && value.nil?
+            doc_option(document.parent_document, key)
+          else
+            value
+          end
+        end
 end
